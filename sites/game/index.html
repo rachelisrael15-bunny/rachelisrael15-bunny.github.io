@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Compose your own song!</title>
+<style>
+  :root{
+    --accent:#6f56e8; --bg:#f6f3ff; /* pale purple page bg */
+    --ink:#111; --zone:#eef0ff; --zone-border:#c7c9ff;
+  }
+  html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  .wrap{max-width:1120px;margin:24px auto 40px;padding:0 16px}
+  h1{margin:0 0 8px;font-weight:800;letter-spacing:.2px}
+  .directions{margin:0 0 18px;background:#fafafa;border:1px solid #eee;border-radius:12px;padding:12px 14px}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:8px 0 16px}
+  button{cursor:pointer;padding:9px 14px;border-radius:10px;border:1px solid #ddd;background:#f7f7ff}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .legend{margin-left:auto;font-size:16px;font-weight:700;color:#2a2a2a;} /* larger + bold */
+
+  .stage{position:relative;isolation:isolate;background:#fff;border-radius:12px}
+  .staff{position:relative; z-index:0; width:100%;display:block;border:1px solid #ddd;border-radius:12px;user-select:none;pointer-events:none}
+
+  .measures{position:absolute;inset:0;display:grid;grid-template-rows:1fr 1fr;gap:40px;padding:14px 32px; z-index:1;}
+  .system{display:grid;grid-template-columns:repeat(4,1fr)}
+  .measure{position:relative;outline:2px solid transparent}
+  .measure[data-hot="1"]{outline-color:var(--zone-border);background:linear-gradient(180deg,transparent,transparent,var(--zone) 60%,transparent)}
+  .beats{position:absolute;right:6px;top:6px;font-size:12px;background:#0000000d;padding:2px 6px;border-radius:999px}
+
+  .rails{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none}
+  .rail{position:absolute;left:6%;right:6%;height:2px;background:transparent}
+
+  .bank{margin:16px 0 8px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px;border:1px dashed #ddd;border-radius:12px;background:#fcfcff}
+  .bank .item{width:64px;height:64px;display:flex;align-items:center;justify-content:center;border-radius:10px;border:1px solid #e6e6f8;background:#fff}
+  .bank svg{width:46px;height:46px}
+
+  .note{
+    position:absolute; width:46px;height:46px; cursor:grab; user-select:none; translate:-50% -50%;
+    z-index:2; filter: drop-shadow(0 1px 1px rgba(0,0,0,.16));
+  }
+  .note.dragging{opacity:.7;cursor:grabbing; filter: drop-shadow(0 6px 8px rgba(0,0,0,.18));}
+  .note.selected{outline:2px solid #8b78ff;outline-offset:2px;border-radius:8px;box-shadow:0 0 0 4px rgba(139,120,255,.16)}
+  .hint{font-size:13px;color:#666;margin:4px 0 0}
+
+  .toast{position:fixed;left:50%;translate:-50% 0;bottom:18px;background:#222;color:#fff;padding:8px 12px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s, translate .2s}
+  .toast.show{opacity:1;translate:-50% -6px}
+
+  @media (max-width:700px){
+    .bank .item{width:56px;height:56px}
+    .bank svg,.note{width:40px;height:40px}
+    .legend{font-size:15px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Compose your own song!</h1>
+  <p class="directions"><strong>Directions:</strong> Using the rhythms below, drag and drop the note heads to the line or space of your choice in each measure. Each measure of music can only contain <strong>4 beats</strong>. For example, you cannot fit a whole note and a half note in the same measure, as that would exceed the number of beats allowed per measure.</p>
+
+  <div class="controls">
+    <button id="clearAll">Clear all notes</button>
+    <button id="export" class="primary">Export composition (PNG)</button>
+    <span class="legend">Beat values: whole=4, half=2, quarter/rest=1  •  Double-click a note to delete  •  ↑/↓ to nudge</span>
+  </div>
+
+  <div class="stage" id="stage">
+    <img id="staffImg" class="staff" src="Stagnant-8-Blank-Bars.png" alt="Blank eight measures of treble staff">
+
+    <div class="measures" id="measures">
+      <div class="system">
+        <div class="measure" data-measure="1"><span class="beats">4</span></div>
+        <div class="measure" data-measure="2"><span class="beats">4</span></div>
+        <div class="measure" data-measure="3"><span class="beats">4</span></div>
+        <div class="measure" data-measure="4"><span class="beats">4</span></div>
+      </div>
+      <div class="system">
+        <div class="measure" data-measure="5"><span class="beats">4</span></div>
+        <div class="measure" data-measure="6"><span class="beats">4</span></div>
+        <div class="measure" data-measure="7"><span class="beats">4</span></div>
+        <div class="measure" data-measure="8"><span class="beats">4</span></div>
+      </div>
+      <div class="rails" id="rails"></div>
+    </div>
+  </div>
+
+  <h3>Rhythm bank</h3>
+  <div class="bank" id="bank">
+    <!-- Whole note (hollow center) -->
+    <div class="item" data-beats="4" data-name="Whole note" data-type="whole">
+      <svg viewBox="0 0 100 100" aria-label="Whole note (4 beats)">
+        <ellipse cx="50" cy="50" rx="30" ry="22" fill="none" stroke="#111" stroke-width="8"/>
+      </svg>
+    </div>
+
+    <!-- Half note - stem up -->
+    <div class="item" data-beats="2" data-name="Half note (stem up)" data-type="half-up">
+      <svg viewBox="0 0 140 160" aria-label="Half note (2 beats, stem up)">
+        <ellipse cx="44" cy="110" rx="28" ry="20" fill="none" stroke="#111" stroke-width="8"/>
+        <rect x="72" y="10" width="8" height="100" fill="#111"/>
+      </svg>
+    </div>
+
+    <!-- Half note - stem down -->
+    <div class="item" data-beats="2" data-name="Half note (stem down)" data-type="half-down">
+      <svg viewBox="0 0 140 160" aria-label="Half note (2 beats, stem down)">
+        <ellipse cx="96" cy="50" rx="28" ry="20" fill="none" stroke="#111" stroke-width="8"/>
+        <rect x="60" y="50" width="8" height="100" fill="#111"/>
+      </svg>
+    </div>
+
+    <!-- Quarter note - stem up -->
+    <div class="item" data-beats="1" data-name="Quarter note (stem up)" data-type="quarter-up">
+      <svg viewBox="0 0 140 160" aria-label="Quarter note (1 beat, stem up)">
+        <ellipse cx="44" cy="110" rx="28" ry="20" fill="#111"/>
+        <rect x="72" y="10" width="8" height="100" fill="#111"/>
+      </svg>
+    </div>
+
+    <!-- Quarter note - stem down -->
+    <div class="item" data-beats="1" data-name="Quarter note (stem down)" data-type="quarter-down">
+      <svg viewBox="0 0 140 160" aria-label="Quarter note (1 beat, stem down)">
+        <ellipse cx="96" cy="50" rx="28" ry="20" fill="#111"/>
+        <rect x="60" y="50" width="8" height="100" fill="#111"/>
+      </svg>
+    </div>
+
+    <!-- Quarter rest -->
+    <div class="item" data-beats="1" data-name="Quarter rest" data-type="qrest">
+      <svg viewBox="0 0 120 160" aria-label="Quarter rest (1 beat)">
+        <path d="M60 10 L80 40 L55 70 L80 100 L50 150 L55 120 L35 95 L60 65 L40 40 Z" fill="#111"/>
+      </svg>
+    </div>
+  </div>
+
+  <p class="hint">Tip: Drag any rhythm onto the staff. You can reuse items unlimited times. Drag to move; double-click to delete.</p>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>
+<script>
+/* ================= CONFIG ================= */
+const NOTE_SIZE = 46;
+
+/* Rails: add extra headroom so nudging reaches the very top line */
+const CORE_RAILS = 9;          // 5 lines + 4 spaces
+const EXTRA_ABOVE = 2;         // extra rails above the top line/space
+const EXTRA_BELOW = 1;         // extra rail below the bottom line
+const RAILS_PER_SYSTEM = CORE_RAILS + EXTRA_ABOVE + EXTRA_BELOW; // 12
+
+/* Position the rail band over your staff image (tweak by 0.01 if needed) */
+const RAIL_TOP_FACTOR = 0.19;   // start a bit higher
+const RAIL_HEIGHT_FACTOR = 0.46; // a bit taller band
+
+/* Fine vertical offsets per type (center alignment to rail middle) */
+const NOTE_Y_OFFSET = {
+  'whole': -2,
+  'half-up': 0, 'half-down': 0,
+  'quarter-up': 0, 'quarter-down': 0,
+  'qrest': 0
+};
+
+/* ================= SHORTCUTS ================= */
+const $ = (s, r=document)=>r.querySelector(s);
+const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
+const toast = (m)=>{const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1200);};
+
+/* ================= RAILS ================= */
+function buildRails(){
+  const rails = $('#rails'); rails.innerHTML='';
+  const systems = $$('.system', $('#measures'));
+  systems.forEach(sys=>{
+    const top = sys.offsetTop + sys.clientHeight*RAIL_TOP_FACTOR;
+    const height = sys.clientHeight*RAIL_HEIGHT_FACTOR;
+    for(let i=0;i<RAILS_PER_SYSTEM;i++){
+      const r = document.createElement('div');
+      r.className='rail';
+      r.style.top = (top + (height/(RAILS_PER_SYSTEM-1))*i) + 'px';
+      rails.appendChild(r);
+    }
+  });
+}
+window.addEventListener('load', buildRails);
+window.addEventListener('resize', buildRails);
+
+/* ================= CREATE NOTE FROM BANK ================= */
+function makeNoteFromItem(item){
+  const container = document.createElement('div');
+  container.className='note';
+  container.style.width = container.style.height = NOTE_SIZE+'px';
+  container.dataset.beats = item.dataset.beats;
+  container.dataset.label = item.dataset.name;
+  container.dataset.type  = item.dataset.type; // 'whole' | 'half-up' | 'half-down' | 'quarter-up' | 'quarter-down' | 'qrest'
+  container.innerHTML = item.innerHTML;
+  enableDrag(container);
+  return container;
+}
+
+/* ================= DRAG CORE ================= */
+let dragging=null, selected=null;
+
+function startDrag(el, e){
+  if(selected) selected.classList.remove('selected');
+  selected = el; selected.classList.add('selected');
+  dragging = el;
+  dragging.classList.add('dragging');
+  dragging.setPointerCapture(e.pointerId);
+  dragging.addEventListener('pointermove', onMove);
+  dragging.addEventListener('pointerup', onUp);
+  position(dragging, e.clientX, e.clientY);
+}
+
+function enableDrag(el){
+  el.addEventListener('pointerdown', e=>{
+    e.preventDefault();
+    startDrag(el, e);
+  });
+  el.addEventListener('dblclick', ()=>{
+    if(el.dataset.measure){
+      const m = getMeasureById(el.dataset.measure);
+      updateBeats(m, +parseInt(el.dataset.beats,10));
+    }
+    el.remove();
+  });
+}
+
+function onMove(e){
+  position(dragging, e.clientX, e.clientY);
+  const m = measureAt(e.clientX, e.clientY);
+  $$('.measure').forEach(x=>x.dataset.hot='0');
+  if(m) m.dataset.hot='1';
+}
+
+function onUp(e){
+  dragging.classList.remove('dragging');
+  dragging.removeEventListener('pointermove', onMove);
+  dragging.removeEventListener('pointerup', onUp);
+  $$('.measure').forEach(x=>x.dataset.hot='0');
+
+  const target = measureAt(e.clientX, e.clientY);
+  if(!target){
+    refundIfNeeded(dragging);
+    dragging.remove(); dragging=null; return;
+  }
+
+  const sameMeasure = dragging.dataset.measure && dragging.dataset.measure===target.dataset.measure;
+  if(!sameMeasure){
+    const need = parseInt(dragging.dataset.beats,10);
+    const left = beatsLeft(target);
+    if(need>left){
+      toast(`Too many beats. ${left} beat(s) left in this measure.`);
+      if(!dragging.dataset.measure){ dragging.remove(); }
+      dragging=null; return;
+    }
+    refundIfNeeded(dragging);
+    updateBeats(target, -need);
+  }
+
+  snapInto(target, dragging, e.clientX, e.clientY);
+  dragging=null;
+}
+
+function refundIfNeeded(note){
+  if(note.dataset.measure){
+    const old = getMeasureById(note.dataset.measure);
+    updateBeats(old, +parseInt(note.dataset.beats,10));
+    note.dataset.measure = '';
+  }
+}
+
+function position(el, clientX, clientY){
+  const stage = $('#stage').getBoundingClientRect();
+  el.style.left = (clientX - stage.left)+'px';
+  el.style.top  = (clientY - stage.top)+'px';
+}
+
+function measureAt(clientX, clientY){
+  return $$('.measure').find(m=>{
+    const r = m.getBoundingClientRect();
+    return clientX>=r.left && clientX<=r.right && clientY>=r.top && clientY<=r.bottom;
+  }) || null;
+}
+function getMeasureById(id){ return $(`.measure[data-measure="${id}"]`); }
+
+/* ================= RAIL HELPERS ================= */
+function systems(){ return $$('.system', $('#measures')); }
+function allRails(){ return $$('.rail', $('#rails')); }
+function railsForMeasure(measure){
+  const a = allRails();
+  const isBottom = systems()[1].contains(measure);
+  return a.slice(isBottom?RAILS_PER_SYSTEM:0, isBottom?RAILS_PER_SYSTEM*2:RAILS_PER_SYSTEM);
+}
+function nearestRailIndex(rails, clientY){
+  let idx=0, min=1e9;
+  rails.forEach((r,i)=>{
+    const d = Math.abs((r.getBoundingClientRect().top + 1) - clientY);
+    if(d<min){min=d; idx=i;}
+  });
+  return idx;
+}
+function yForRail(rail){ return rail.getBoundingClientRect().top; }
+
+/* ================= SNAP ================= */
+function snapInto(measure, note, clientX, clientY){
+  const rails = railsForMeasure(measure);
+  const idx = nearestRailIndex(rails, clientY);
+
+  const mRect = measure.getBoundingClientRect();
+  const stageRect = $('#stage').getBoundingClientRect();
+  let x = clientX - stageRect.left;
+  const y = yForRail(rails[idx]) - stageRect.top + (NOTE_Y_OFFSET[note.dataset.type] ?? 0);
+
+  const pad=14, minX=mRect.left-stageRect.left+pad, maxX=mRect.right-stageRect.left-pad;
+  if(x<minX) x=minX; if(x>maxX) x=maxX;
+
+  note.style.left=x+'px'; note.style.top=y+'px';
+  note.dataset.measure = measure.dataset.measure;
+  note.dataset.railIndex = String(idx);
+}
+
+/* ================= BEATS ================= */
+function beatsLeft(m){ return parseInt($('.beats', m).textContent,10); }
+function updateBeats(m, delta){
+  const b=$('.beats', m); b.textContent = Math.max(0, Math.min(4, parseInt(b.textContent,10)+delta));
+}
+
+/* ================= BANK ================= */
+$('#bank').addEventListener('pointerdown', (e)=>{
+  const item=e.target.closest('.item'); if(!item) return;
+  const note=makeNoteFromItem(item);
+  $('#stage').appendChild(note);
+  startDrag(note, e);
+});
+
+/* ================= KEYBOARD NUDGE ================= */
+window.addEventListener('keydown', (e)=>{
+  const sel = document.querySelector('.note.selected'); if(!sel) return;
+  if(e.key!=='ArrowUp' && e.key!=='ArrowDown') return;
+  e.preventDefault();
+
+  const measureId = sel.dataset.measure; if(!measureId) return;
+  const m = getMeasureById(measureId);
+  const rails = railsForMeasure(m);
+
+  let idx = (sel.dataset.railIndex!=null) ? parseInt(sel.dataset.railIndex,10) : -1;
+  if(idx<0 || idx>=rails.length){
+    const centerY = sel.getBoundingClientRect().top + sel.offsetHeight/2;
+    idx = nearestRailIndex(rails, centerY);
+  }
+
+  idx += (e.key==='ArrowUp' ? -1 : 1);
+  idx = Math.max(0, Math.min(rails.length-1, idx)); // full reach top/bottom
+
+  const stageRect = $('#stage').getBoundingClientRect();
+  sel.style.top = (yForRail(rails[idx]) - stageRect.top + (NOTE_Y_OFFSET[sel.dataset.type] ?? 0)) + 'px';
+  sel.dataset.railIndex = String(idx);
+});
+
+/* ================= CLEAR & EXPORT ================= */
+$('#clearAll').addEventListener('click', ()=>{
+  $$('.note').forEach(n=>n.remove());
+  $$('.beats').forEach(b=>b.textContent='4');
+});
+$('#export').addEventListener('click', async ()=>{
+  toast('Generating PNG…');
+  const canvas=await html2canvas($('#stage'),{backgroundColor:'#ffffff',scale:2});
+  const a=document.createElement('a'); a.download='my-composition.png'; a.href=canvas.toDataURL('image/png'); a.click();
+  toast('Saved!');
+});
+</script>
+</body>
+</html>
+
