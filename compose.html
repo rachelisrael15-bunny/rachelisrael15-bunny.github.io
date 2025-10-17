@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Compose your own song!</title>
+<style>
+  :root{ --accent:#6f56e8; --ink:#111; --bg:#f7f3ff; --sel:#2a68ff; }
+  html,body{margin:0;background:var(--bg);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#111}
+  .wrap{max-width:1264px;margin:20px auto 40px;padding:0 12px}
+  h1{margin:0 0 8px;font-weight:800}
+  .directions{margin:0 0 14px;background:#fff;border:1px solid #e9e6ff;border-radius:12px;padding:12px}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:8px 0 14px}
+  button{cursor:pointer;padding:9px 14px;border-radius:10px;border:1px solid #ddd;background:#f7f7ff}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .legend{margin-left:auto;font-weight:700;color:#333}
+  .bank{margin:16px 0 8px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px;border:1px dashed #ddd;border-radius:12px;background:#fff}
+  .bank .item{width:64px;height:64px;display:flex;align-items:center;justify-content:center;border-radius:10px;border:1px solid #ececff;background:#fff}
+  .bank svg{width:46px;height:46px}
+  .hint{font-size:13px;color:#555;margin-top:6px}
+  svg#score{background:#fff;border-radius:12px;border:1px solid #e5e2ff}
+  .beatsTag{font:12px/1.1 system-ui;fill:#222}
+  .note{cursor:grab}
+  .note.drag{opacity:.85;cursor:grabbing}
+  .selBox{stroke:var(--sel);stroke-width:2;fill:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Compose your own song!</h1>
+  <p class="directions">
+    <strong>Directions:</strong> Drag rhythms below onto any line or space. Each measure can contain up to <strong>4 beats</strong>.
+    <strong>Beat values:</strong> whole = 4, half = 2, quarter/rest = 1. <br>
+    <strong>Select a note</strong> (single click) to manipulate it: use <strong>↑/↓</strong> to move to the next/previous line or space,
+    press <strong>Delete/Backspace</strong> (or double-click) to remove it. Selected notes turn <strong style="color:#2a68ff">blue</strong>.
+  </p>
+
+  <div class="controls">
+    <button id="deleteOne">Delete selected</button>
+    <button id="clearAll">Clear all notes</button>
+    <button id="export" class="primary">Export (PNG)</button>
+    <span class="legend">↑/↓ = next/prev line or space</span>
+  </div>
+
+  <!-- SCORE (SVG) -->
+  <svg id="score" width="1264" height="420" viewBox="0 0 1264 420" xmlns="http://www.w3.org/2000/svg" aria-label="Two-staff score for composition">
+    <g id="staffs"></g>
+    <g id="notes" stroke-linejoin="round" stroke-linecap="round"></g>
+    <rect id="sel" class="selBox" visibility="hidden"/>
+  </svg>
+
+  <h3>Rhythm bank</h3>
+  <div class="bank" id="bank">
+    <div class="item" data-beats="4" data-type="whole" title="Whole note (4 beats)">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <ellipse cx="50" cy="50" rx="30" ry="22" fill="none" stroke="#111" stroke-width="8"/>
+      </svg>
+    </div>
+    <div class="item" data-beats="2" data-type="half-up" title="Half note (2 beats, stem up)">
+      <svg viewBox="0 0 140 160" aria-hidden="true">
+        <ellipse cx="44" cy="110" rx="28" ry="20" fill="none" stroke="#111" stroke-width="8"/>
+        <rect x="72" y="10" width="8" height="100" fill="#111"/>
+      </svg>
+    </div>
+    <div class="item" data-beats="2" data-type="half-down" title="Half note (2 beats, stem down)">
+      <svg viewBox="0 0 140 160" aria-hidden="true">
+        <ellipse cx="96" cy="50" rx="28" ry="20" fill="none" stroke="#111" stroke-width="8"/>
+        <rect x="60" y="50" width="8" height="100" fill="#111"/>
+      </svg>
+    </div>
+    <div class="item" data-beats="1" data-type="quarter-up" title="Quarter note (1 beat, stem up)">
+      <svg viewBox="0 0 140 160" aria-hidden="true">
+        <ellipse cx="44" cy="110" rx="28" ry="20" fill="#111"/>
+        <rect x="72" y="10" width="8" height="100" fill="#111"/>
+      </svg>
+    </div>
+    <div class="item" data-beats="1" data-type="quarter-down" title="Quarter note (1 beat, stem down)">
+      <svg viewBox="0 0 140 160" aria-hidden="true">
+        <ellipse cx="96" cy="50" rx="28" ry="20" fill="#111"/>
+        <rect x="60" y="50" width="8" height="100" fill="#111"/>
+      </svg>
+    </div>
+    <div class="item" data-beats="1" data-type="qrest" title="Quarter rest (1 beat)">
+      <svg viewBox="0 0 120 160" aria-hidden="true">
+        <path d="M60 10 L80 40 L55 70 L80 100 L50 150 L55 120 L35 95 L60 65 L40 40 Z" fill="#111"/>
+      </svg>
+    </div>
+  </div>
+  <p class="hint">Tip: Drag inside a measure to snap. Use ↑/↓ after placing to step precisely. Double-click a note or press Delete/Backspace to remove it.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>
+<script>
+/* ======== SCORE GEOMETRY ======== */
+const W = 1264, H = 420;
+const MARGIN_L = 60, MARGIN_R = 1220;
+const SYSTEM_GAP = 150;
+const TOP1 = 80;                 // top line (E) of staff 1
+const LINE_GAP = 22;
+const TOP2 = TOP1 + SYSTEM_GAP;  // top line of staff 2
+
+const BAR_XS = (left, right) => {
+  const width = right - left;
+  return [left, left + width*0.25, left + width*0.50, left + width*0.75, right];
+};
+function railsForTop(topY){ return [
+  topY, topY+LINE_GAP*0.5, topY+LINE_GAP*1, topY+LINE_GAP*1.5, topY+LINE_GAP*2,
+  topY+LINE_GAP*2.5, topY+LINE_GAP*3, topY+LINE_GAP*3.5, topY+LINE_GAP*4
+];}
+const RAILS1 = railsForTop(TOP1);
+const RAILS2 = railsForTop(TOP2);
+
+const svg = document.getElementById('score');
+const staffs = document.getElementById('staffs');
+
+/* Draw staves, measures, clefs, beat counters, and final double bar */
+function drawStaff(topY, systemIdx){
+  const g = document.createElementNS(svg.namespaceURI,'g');
+
+  // staff lines
+  for(let i=0;i<5;i++){
+    const y = topY + i*LINE_GAP;
+    const line = document.createElementNS(svg.namespaceURI,'line');
+    line.setAttribute('x1', MARGIN_L);
+    line.setAttribute('x2', MARGIN_R);
+    line.setAttribute('y1', y);
+    line.setAttribute('y2', y);
+    line.setAttribute('stroke', '#111');
+    line.setAttribute('stroke-width', '2');
+    g.appendChild(line);
+  }
+
+  // CLEF — larger and centered on the G line (second line from bottom)
+  const clef = document.createElementNS(svg.namespaceURI,'text');
+  clef.textContent = '𝄞';
+  clef.setAttribute('font-family', "Noto Music, Bravura, 'Segoe UI Symbol', 'Apple Symbols', serif");
+  clef.setAttribute('font-size', '118');              // larger
+  clef.setAttribute('text-anchor','middle');
+  clef.setAttribute('x', String(MARGIN_L + 22));      // horizontal nudge
+  clef.setAttribute('y', String(topY + LINE_GAP * 3.0)); // G line position
+  clef.setAttribute('dominant-baseline','middle');
+  g.appendChild(clef);
+
+  // measures (4 per system)
+  const xs = BAR_XS(MARGIN_L, MARGIN_R);
+  for(let i=1;i<xs.length-1;i++){
+    const bar = document.createElementNS(svg.namespaceURI,'line');
+    bar.setAttribute('x1', xs[i]);
+    bar.setAttribute('x2', xs[i]);
+    bar.setAttribute('y1', topY);
+    bar.setAttribute('y2', topY + 4*LINE_GAP);
+    bar.setAttribute('stroke', '#111');
+    bar.setAttribute('stroke-width', '2');
+    g.appendChild(bar);
+  }
+
+  // beats tags (top-right of each measure)
+  for(let m=0;m<4;m++){
+    const text = document.createElementNS(svg.namespaceURI,'text');
+    text.setAttribute('class','beatsTag');
+    text.textContent = '4';
+    text.setAttribute('x', xs[m+1] - 16);
+    text.setAttribute('y', topY - 8);
+    g.appendChild(text);
+  }
+
+  // Final double bar at the end of measure 8 (bottom staff)
+  if(systemIdx === 2){
+    const y1 = topY, y2 = topY + 4*LINE_GAP;
+    const thin = document.createElementNS(svg.namespaceURI,'line');
+    thin.setAttribute('x1', MARGIN_R - 6);
+    thin.setAttribute('x2', MARGIN_R - 6);
+    thin.setAttribute('y1', y1);
+    thin.setAttribute('y2', y2);
+    thin.setAttribute('stroke', '#111');
+    thin.setAttribute('stroke-width', '2');
+    g.appendChild(thin);
+
+    const thick = document.createElementNS(svg.namespaceURI,'line');
+    thick.setAttribute('x1', MARGIN_R);
+    thick.setAttribute('x2', MARGIN_R);
+    thick.setAttribute('y1', y1);
+    thick.setAttribute('y2', y2);
+    thick.setAttribute('stroke', '#111');
+    thick.setAttribute('stroke-width', '6');
+    g.appendChild(thick);
+  }
+
+  staffs.appendChild(g);
+}
+drawStaff(TOP1,1);
+drawStaff(TOP2,2);
+
+/* Measure rects for hit-testing */
+function measureRects(){
+  const xs = BAR_XS(MARGIN_L, MARGIN_R);
+  const rects = [];
+  for(let i=0;i<4;i++){ rects.push({system:1, index:i+1, x1:xs[i], x2:xs[i+1], y1:TOP1, y2:TOP1 + 4*LINE_GAP}); }
+  for(let i=0;i<4;i++){ rects.push({system:2, index:i+5, x1:xs[i], x2:xs[i+1], y1:TOP2, y2:TOP2 + 4*LINE_GAP}); }
+  return rects;
+}
+const MEAS = measureRects();
+const notesLayer = document.getElementById('notes');
+
+/* ======== NOTES (SVG shapes) ======== */
+function makeNoteSVG(type){
+  const g = document.createElementNS(svg.namespaceURI,'g');
+  g.setAttribute('class','note');
+  g.dataset.type = type;
+
+  if(type==='whole'){
+    const e = document.createElementNS(svg.namespaceURI,'ellipse');
+    e.setAttribute('cx','0'); e.setAttribute('cy','0');
+    e.setAttribute('rx','13'); e.setAttribute('ry','9.5');
+    e.setAttribute('fill','none'); e.setAttribute('stroke','#111'); e.setAttribute('stroke-width','3');
+    g.appendChild(e);
+  } else if(type==='half-up'){
+    const e = document.createElementNS(svg.namespaceURI,'ellipse');
+    e.setAttribute('cx','-6'); e.setAttribute('cy','0');
+    e.setAttribute('rx','12'); e.setAttribute('ry','9');
+    e.setAttribute('fill','none'); e.setAttribute('stroke','#111'); e.setAttribute('stroke-width','3');
+    const stem = document.createElementNS(svg.namespaceURI,'rect');
+    stem.setAttribute('x','4'); stem.setAttribute('y','-28'); stem.setAttribute('width','3'); stem.setAttribute('height','28');
+    stem.setAttribute('fill','#111');
+    g.appendChild(e); g.appendChild(stem);
+  } else if(type==='half-down'){
+    const e = document.createElementNS(svg.namespaceURI,'ellipse');
+    e.setAttribute('cx','6'); e.setAttribute('cy','0');
+    e.setAttribute('rx','12'); e.setAttribute('ry','9');
+    e.setAttribute('fill','none'); e.setAttribute('stroke','#111'); e.setAttribute('stroke-width','3');
+    const stem = document.createElementNS(svg.namespaceURI,'rect');
+    stem.setAttribute('x','-7'); stem.setAttribute('y','0'); stem.setAttribute('width','3'); stem.setAttribute('height','28');
+    stem.setAttribute('fill','#111');
+    g.appendChild(e); g.appendChild(stem);
+  } else if(type==='quarter-up'){
+    const e = document.createElementNS(svg.namespaceURI,'ellipse');
+    e.setAttribute('cx','-6'); e.setAttribute('cy','0');
+    e.setAttribute('rx','12'); e.setAttribute('ry','9');
+    e.setAttribute('fill','#111');
+    const stem = document.createElementNS(svg.namespaceURI,'rect');
+    stem.setAttribute('x','4'); stem.setAttribute('y','-28'); stem.setAttribute('width','3'); stem.setAttribute('height','28');
+    stem.setAttribute('fill','#111');
+    g.appendChild(e); g.appendChild(stem);
+  } else if(type==='quarter-down'){
+    const e = document.createElementNS(svg.namespaceURI,'ellipse');
+    e.setAttribute('cx','6'); e.setAttribute('cy','0');
+    e.setAttribute('rx','12'); e.setAttribute('ry','9');
+    e.setAttribute('fill','#111');
+    const stem = document.createElementNS(svg.namespaceURI,'rect');
+    stem.setAttribute('x','-7'); stem.setAttribute('y','0'); stem.setAttribute('width','3'); stem.setAttribute('height','28');
+    stem.setAttribute('fill','#111');
+    g.appendChild(e); g.appendChild(stem);
+  } else if(type==='qrest'){
+    const p = document.createElementNS(svg.namespaceURI,'path');
+    p.setAttribute('d','M0,-18 L10,-4 L-6,6 L10,18 L-4,38 L-2,22 L-12,10 L0,-4 L-10,-16 Z');
+    p.setAttribute('fill','#111');
+    g.appendChild(p);
+  }
+  return g;
+}
+
+/* ======== SNAP/BEATS/SELECTION ======== */
+const BEATS = {}; for(let i=1;i<=8;i++) BEATS[i]=4;
+function showBeats(){ Array.from(svg.querySelectorAll('.beatsTag')).forEach((t,i)=> t.textContent = BEATS[i+1]); }
+showBeats();
+
+function hitMeasure(x,y){ return MEAS.find(m => x>=m.x1 && x<=m.x2 && y>=m.y1 && y<=m.y2) || null; }
+function railsForSystem(sys){ return sys===1 ? RAILS1 : RAILS2; }
+function nearestRailY(sys, y){
+  const rails = railsForSystem(sys);
+  let idx=0, d=1e9; for(let i=0;i<rails.length;i++){ const di=Math.abs(rails[i]-y); if(di<d){d=di; idx=i;} }
+  return {y: rails[idx], idx};
+}
+
+/* selection color helpers */
+function colorizeNote(g, color){
+  g.querySelectorAll('*').forEach(el=>{
+    if(el.tagName==='ellipse' && el.getAttribute('fill')==='none'){
+      el.setAttribute('stroke', color);
+    }else{
+      if(el.hasAttribute('stroke')) el.setAttribute('stroke', color);
+      if(el.hasAttribute('fill') && el.getAttribute('fill')!=='none') el.setAttribute('fill', color);
+    }
+  });
+}
+function selectNote(g){
+  document.getElementById('sel').setAttribute('visibility','hidden');
+  Array.from(notesLayer.querySelectorAll('.note')).forEach(n=>{
+    n.classList.remove('sel'); colorizeNote(n, '#111');
+  });
+  if(!g) return;
+  g.classList.add('sel'); colorizeNote(g, getComputedStyle(document.documentElement).getPropertyValue('--sel').trim() || '#2a68ff');
+  const sel = document.getElementById('sel');
+  const b = g.getBBox();
+  sel.setAttribute('x', b.x-4); sel.setAttribute('y', b.y-4);
+  sel.setAttribute('width', b.width+8); sel.setAttribute('height', b.height+8);
+  sel.setAttribute('visibility','visible');
+}
+
+/* drag from bank */
+document.getElementById('bank').addEventListener('pointerdown', (e)=>{
+  const item = e.target.closest('.item'); if(!item) return;
+  const g = makeNoteSVG(item.dataset.type);
+  g.dataset.beats = item.dataset.beats;
+  g.dataset.type = item.dataset.type;
+  g.setAttribute('transform', `translate(${W/2},${H/2})`);
+  notesLayer.appendChild(g);
+  startDrag(g, e);
+});
+
+let dragging=null, startPointerId=null;
+
+function startDrag(g, e){
+  selectNote(g);
+  dragging = g; dragging.classList.add('drag');
+  startPointerId = e.pointerId;
+  g.setPointerCapture(startPointerId);
+  g.addEventListener('pointermove', onDrag);
+  g.addEventListener('pointerup', onDrop);
+  onDrag(e);
+}
+function onDrag(e){
+  const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+  let x = loc.x, y = loc.y;
+  const m = hitMeasure(x,y);
+  if(m){
+    const snap = nearestRailY(m.system, y);
+    y = snap.y;
+    x = Math.max(m.x1+12, Math.min(m.x2-12, x));
+    dragging.dataset.measure = m.index;
+    dragging.dataset.rail = snap.idx;
+  }else{
+    dragging.dataset.measure = '';
+    dragging.dataset.rail = '';
+  }
+  dragging.setAttribute('transform', `translate(${x},${y})`);
+  selectNote(dragging);
+}
+function onDrop(e){
+  dragging.classList.remove('drag');
+  dragging.removeEventListener('pointermove', onDrag);
+  dragging.removeEventListener('pointerup', onDrop);
+  const mIdx = dragging.dataset.measure;
+  if(!mIdx){
+    if(!dragging.dataset.placed){ dragging.remove(); selectNote(null); }
+    dragging=null; return;
+  }
+  const need = parseInt(dragging.dataset.beats,10);
+  if(!dragging.dataset.placed){
+    if(BEATS[mIdx] < need){ alert(`Too many beats. ${BEATS[mIdx]} beat(s) left in measure ${mIdx}.`); dragging.remove(); selectNote(null); dragging=null; return; }
+    BEATS[mIdx] -= need; dragging.dataset.placed='1';
+  }else{
+    const prev = dragging.dataset.prevMeasure;
+    if(prev && prev !== mIdx){
+      BEATS[prev] += need;
+      if(BEATS[mIdx] < need){ alert(`Too many beats in measure ${mIdx}.`); dragging.setAttribute('transform', dragging.dataset.prevTransform); dragging.dataset.measure = prev; dragging.dataset.rail = dragging.dataset.prevRail; dragging=null; showBeats(); return; }
+      BEATS[mIdx] -= need;
+    }
+  }
+  dragging.dataset.prevMeasure = mIdx;
+  dragging.dataset.prevRail = dragging.dataset.rail;
+  dragging.dataset.prevTransform = dragging.getAttribute('transform');
+  showBeats();
+  dragging=null;
+}
+
+/* click to select */
+notesLayer.addEventListener('pointerdown', (e)=>{
+  const g = e.target.closest('.note'); if(!g) return;
+  selectNote(g);
+});
+
+/* double-click to delete */
+notesLayer.addEventListener('dblclick', (e)=>{
+  const g = e.target.closest('.note'); if(!g) return; removeNote(g);
+});
+
+/* keyboard: Delete/Backspace and ↑/↓ */
+window.addEventListener('keydown', (e)=>{
+  if(e.key!=='Delete' && e.key!=='Backspace' && e.key!=='ArrowUp' && e.key!=='ArrowDown') return;
+  const sel = notesLayer.querySelector('.note.sel'); if(!sel) return;
+
+  if(e.key==='Delete' || e.key==='Backspace'){ removeNote(sel); return; }
+
+  // ↑/↓ move selected along rails
+  if(!sel.dataset.measure) return;
+  e.preventDefault();
+  const sys = (sel.dataset.measure<=4) ? 1 : 2;
+  const rails = (sys===1?RAILS1:RAILS2);
+  let idx = parseInt(sel.dataset.rail ?? '4',10);
+  idx += (e.key==='ArrowUp' ? -1 : 1);
+  idx = Math.max(0, Math.min(rails.length-1, idx));
+  sel.dataset.rail = idx;
+  const tr = sel.getAttribute('transform');
+  const x = +tr.match(/translate\(([^,]+),/)[1];
+  const y = rails[idx];
+  sel.setAttribute('transform', `translate(${x},${y})`);
+  selectNote(sel);
+});
+
+/* delete selected button */
+document.getElementById('deleteOne').addEventListener('click', ()=>{
+  const sel = notesLayer.querySelector('.note.sel'); if(sel) removeNote(sel);
+});
+
+/* utilities */
+function removeNote(g){
+  if(g.dataset.placed && g.dataset.measure){
+    BEATS[g.dataset.measure] += parseInt(g.dataset.beats,10);
+    showBeats();
+  }
+  g.remove(); selectNote(null);
+}
+
+/* Clear & Export */
+document.getElementById('clearAll').addEventListener('click', ()=>{
+  notesLayer.innerHTML='';
+  for(let i=1;i<=8;i++) BEATS[i]=4;
+  showBeats(); selectNote(null);
+});
+document.getElementById('export').addEventListener('click', async ()=>{
+  // Render SVG to PNG
+  const data = new XMLSerializer().serializeToString(svg);
+  const img = new Image(); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(data);
+  await img.decode();
+  const canvas = document.createElement('canvas'); canvas.width=W; canvas.height=H;
+  const ctx = canvas.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H); ctx.drawImage(img,0,0);
+  const a=document.createElement('a'); a.download='my-composition.png'; a.href=canvas.toDataURL('image/png'); a.click();
+});
+</script>
+</body>
+</html>
