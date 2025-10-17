@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Practice Keyboard Note Matching — Single File</title>
+  <!-- Tailwind CDN (Play) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18 UMD + Babel for JSX in-browser -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- html2canvas + jsPDF for certificate export -->
+  <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <style>
+    /* Sparkle animation for the banner */
+    @keyframes sparkle-float-up { from { transform: translateY(6px); opacity: .0;} to { transform: translateY(0); opacity: 1;} }
+    .sparkle { animation: sparkle-float-up .5s ease-out both; }
+  </style>
+</head>
+<body class="min-h-screen bg-purple-50 text-slate-800">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useMemo, useState, useEffect } = React;
+
+    // --- Helper: build keyboard from C4 (middle C) to F5 ---
+    const NOTE_SEQUENCE = [
+      { n: "C", w: true }, { n: "C#", w: false }, { n: "D", w: true }, { n: "D#", w: false },
+      { n: "E", w: true }, { n: "F", w: true }, { n: "F#", w: false }, { n: "G", w: true },
+      { n: "G#", w: false }, { n: "A", w: true }, { n: "A#", w: false }, { n: "B", w: true }
+    ];
+    const START_OCT = 4; // C4
+    const END = { n: "F", oct: 5 }; // inclusive end at F5
+
+    function buildKeys() {
+      const keys = []; let oct = START_OCT; let idx = 0;
+      while (true) {
+        const base = NOTE_SEQUENCE[idx % 12];
+        keys.push({ id: `${base.n}${oct}`, letter: base.n, isWhite: base.w });
+        if (base.n === END.n && oct === END.oct) break;
+        idx++; if (idx % 12 === 0) oct++;
+      }
+      return keys;
+    }
+
+    // Target white keys for treble-clef lines/spaces only (E4 up to F5)
+    const TARGET_WHITES = new Set(["E4","F4","G4","A4","B4","C5","D5","E5","F5"]);
+    // Special always-glow keys
+    const ALWAYS_RED = new Set(["C4","D4"]);
+    // Note Bank letters (include two E's and two F's) — shuffled on load/reset
+    const INITIAL_BANK = ["E","F","G","A","B","C","D","E","F"]; // 9 items
+
+    // Visual sizing (realistic proportions)
+    const WHITE_W = 80; // px
+    const WHITE_H = 320; // px
+    const GAP = 2; // px between white keys
+    const BLACK_W = 48; // ~60% of white key width
+    const BLACK_H = 200; // ~2/3 the height
+
+    // Where black keys appear relative to the preceding white key
+    const BLACK_AFTER = { C:"C#", D:"D#", F:"F#", G:"G#", A:"A#" };
+
+    // Certificate component (no logo)
+    function Certificate({
+      name = "Student",
+      course = "Practice Keyboard Note Matching",
+      section = "From Staff to Song Module 2",
+      dateStr = new Date().toLocaleDateString(),
+      professor = "Rachel Israel",
+      signature = "Rachel Israel",
+    }){
+      return (
+        <div id="certificate" className="mx-auto bg-white border-4 border-slate-800 rounded-xl p-6 text-slate-800 shadow relative overflow-hidden" style={{ width: '680px' }}>
+          <div className="absolute inset-3 border-2 border-slate-400 rounded-lg pointer-events-none"></div>
+          <div className="absolute -top-8 -left-8 text-7xl opacity-10">🎼</div>
+          <div className="absolute -bottom-8 -right-8 text-7xl opacity-10">🎵🎶</div>
+          <h4 className="text-2xl font-extrabold tracking-wide text-center">Certificate of Completion</h4>
+          <p className="text-center text-sm text-slate-500">Awarded for successful mastery of treble-clef keyboard note matching</p>
+          <div className="mt-6 text-center">
+            <div className="text-sm">This certifies that</div>
+            <div className="text-3xl font-black mt-1">{name}</div>
+            <div className="mt-2">has completed</div>
+            <div className="text-xl font-semibold">{course}</div>
+            <div className="text-md italic text-slate-700">{section}</div>
+            <div className="mt-2 text-sm">on</div>
+            <div className="font-semibold">{dateStr}</div>
+          </div>
+          <div className="mt-8 grid grid-cols-2 gap-6 items-end">
+            <div className="flex flex-col">
+              <div className="text-sm font-semibold">Instructor/Professor</div>
+              <div className="mt-1 border-b border-slate-700 pb-1 font-medium">{professor}</div>
+            </div>
+            <div className="flex flex-col items-end">
+              <div className="text-sm font-semibold self-start">Signature</div>
+              <div className="mt-1 w-full border-b border-slate-700 pb-1 text-right">
+                <span style={{ fontFamily: 'Brush Script MT, Segoe Script, cursive', fontSize: '24px' }}>{signature}</span>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 text-center text-xs text-slate-500">Decor: treble clef, notes, staff motifs</div>
+        </div>
+      );
+    }
+
+    function ExportCertificateButton(){
+      async function handleExport(){
+        const el = document.getElementById('certificate'); if(!el) return;
+        const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
+        const imgData = canvas.toDataURL('image/png');
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const ratio = Math.min(pageWidth / canvas.width, pageHeight / canvas.height);
+        const w = canvas.width * ratio; const h = canvas.height * ratio;
+        const x = (pageWidth - w) / 2; const y = (pageHeight - h) / 2;
+        pdf.addImage(imgData, 'PNG', x, y, w, h);
+        pdf.save('Keyboard-Matching-Certificate.pdf');
+      }
+      return (
+        <button onClick={handleExport} className="px-5 py-2 bg-indigo-600 text-white rounded-xl shadow hover:brightness-110 active:scale-95">Download Certificate (PDF)</button>
+      );
+    }
+
+    function App(){
+      const allKeys = useMemo(() => buildKeys(), []);
+      const whiteKeys = allKeys.filter(k => k.isWhite);
+
+      // Fisher–Yates shuffle
+      const shuffle = (arr) => { const a=[...arr]; for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; };
+
+      // state
+      const [bank, setBank] = useState(() => shuffle(INITIAL_BANK).map((t,i)=>({ id:`bank-${i}-${t}`, label:t })));
+      const [placements, setPlacements] = useState({}); // keyId -> letter
+      const [flashWrong, setFlashWrong] = useState({}); // keyId -> boolean
+      const [celebrate, setCelebrate] = useState(false);
+      const [studentName, setStudentName] = useState("");
+
+      // Dev sanity checks
+      useEffect(() => {
+        try{
+          const keys = buildKeys();
+          console.assert(keys[0].id === 'C4', 'First key should be C4');
+          console.assert(keys[keys.length-1].id === 'F5', 'Last key should be F5');
+          const idSet = new Set(keys.map(k=>k.id));
+          TARGET_WHITES.forEach(id => console.assert(idSet.has(id), `Target white exists: ${id}`));
+          ['C4','D4'].forEach(id => console.assert(idSet.has(id), `Always-red exists: ${id}`));
+          console.assert(INITIAL_BANK.filter(x=>x==='E').length===2, 'Two E\'s');
+          console.assert(INITIAL_BANK.filter(x=>x==='F').length===2, 'Two F\'s');
+        }catch{}
+      },[]);
+
+      // Fun success sound using Web Audio API
+      function playSuccessSound(){
+        try{
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          const ctx = new AudioCtx(); const now = ctx.currentTime;
+          const freqs = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+          freqs.forEach((f,i)=>{ const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(ctx.destination); const t=now+i*0.12; o.start(t); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.2,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.25); o.stop(t+0.26); });
+        }catch{}
+      }
+      useEffect(()=>{ if(celebrate) playSuccessSound(); },[celebrate]);
+
+      const placedCount = Object.keys(placements).length;
+      const totalNeeded = TARGET_WHITES.size;
+
+      // Drag handling
+      function onDragStart(e, item){ e.dataTransfer.setData('text/plain', JSON.stringify(item)); e.dataTransfer.effectAllowed='move'; }
+      function onDropKey(e, key){
+        e.preventDefault(); const raw=e.dataTransfer.getData('text/plain'); if(!raw) return; let item; try{ item=JSON.parse(raw);}catch{return;}
+        if(!key.isWhite || !TARGET_WHITES.has(key.id)) { setFlashWrong(p=>({...p,[key.id]:true})); setTimeout(()=>setFlashWrong(p=>({...p,[key.id]:false})),600); return; }
+        const keyLetter = key.id[0]; if(item.label !== keyLetter){ setFlashWrong(p=>({...p,[key.id]:true})); setTimeout(()=>setFlashWrong(p=>({...p,[key.id]:false})),600); return; }
+        if(placements[key.id]) return; // already placed
+        setPlacements(p=>({ ...p, [key.id]: item.label }));
+        setBank(p=>p.filter(b=>b.id!==item.id));
+        setTimeout(()=>{ const newCount = Object.keys(placements).length + 1; if(newCount===totalNeeded) setCelebrate(true); },50);
+      }
+      function allowDrop(e){ e.preventDefault(); e.dataTransfer.dropEffect='move'; }
+      function resetGame(){ setBank(shuffle(INITIAL_BANK).map((t,i)=>({ id:`bank-${i}-${t}`, label:t }))); setPlacements({}); setFlashWrong({}); setCelebrate(false); }
+      function removePlacement(keyId){ const letter = placements[keyId]; if(!letter) return; setBank(p=>[{ id:`bank-return-${keyId}-${Date.now()}`, label: letter }, ...p]); setPlacements(p=>{ const c={...p}; delete c[keyId]; return c;}); }
+
+      // Width cropped to last white key edge
+      const keyboardWidth = whiteKeys.length * WHITE_W + (whiteKeys.length - 1) * GAP;
+
+      return (
+        <div className="p-6">
+          <div className="max-w-[1300px] mx-auto">
+            <header className="mb-6 text-center">
+              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Practice Keyboard Note Matching</h1>
+              <p className="mt-3 text-base sm:text-lg leading-relaxed">
+                Drag a letter from the <span className="font-semibold">Note Bank</span> onto its matching white key.
+                Keys for <span className="font-semibold">Middle C (C4)</span> and <span className="font-semibold">D4</span> glow red — not part of treble-clef lines/spaces.
+                Correct keys light up green; incorrect drops flash red. Click a placed letter to <span className="font-semibold">delete</span> it.
+              </p>
+            </header>
+
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-sm sm:text-base">Placed: <span className="font-semibold">{placedCount}</span> / {totalNeeded}</div>
+              <button onClick={resetGame} className="px-4 py-2 rounded-2xl shadow-sm border bg-white hover:bg-slate-50 active:scale-[0.98]" aria-label="Reset the game">Reset</button>
+            </div>
+
+            <section aria-label="Note Bank" className="mb-6">
+              <h2 className="text-xl font-bold mb-2">Note Bank</h2>
+              <div className="flex flex-wrap gap-3">
+                {bank.length===0 && (<div className="text-slate-500">All letters placed. Great job!</div>)}
+                {bank.map(item => (
+                  <div key={item.id}
+                    draggable onDragStart={e=>onDragStart(e,item)} role="button" aria-grabbed="false"
+                    className="select-none rounded-2xl px-5 py-2 bg-white border shadow-sm hover:shadow transition focus:outline-none focus:ring-2 focus:ring-slate-400 text-lg font-semibold">
+                    {item.label}
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section aria-label="Piano keyboard" className="relative mx-auto">
+              <div className="relative rounded-2xl p-6 shadow-inner bg-slate-100 overflow-hidden border-2 border-black" style={{ width: (keyboardWidth+8)+"px", height: (WHITE_H+50)+"px" }}>
+                <div className="relative mx-auto" style={{ width: keyboardWidth+"px", height: (WHITE_H+24)+"px" }}>
+                  {/* White keys row */}
+                  <div className="absolute bottom-0 left-0 right-0 flex" style={{ gap: GAP+"px" }}>
+                    {whiteKeys.map((key,i)=>{
+                      const isAlwaysRed = ALWAYS_RED.has(key.id);
+                      const isTarget = TARGET_WHITES.has(key.id);
+                      const isPlaced = placements[key.id];
+                      const wrong = !!flashWrong[key.id];
+                      return (
+                        <div key={key.id} className="relative" style={{ width: WHITE_W+"px" }}>
+                          <div onDrop={e=>onDropKey(e,key)} onDragOver={allowDrop}
+                               aria-label={`White key${isAlwaysRed ? ', restricted' : isTarget ? ', target' : ''}`}
+                               className={[
+                                 "bg-white border border-slate-400 rounded-b-2xl flex items-start justify-center transition",
+                                 isPlaced && "bg-green-200 border-green-500",
+                                 wrong && "animate-pulse bg-red-200 border-red-500",
+                                 isAlwaysRed && !isPlaced && !wrong && "ring-2 ring-red-400 shadow-[0_0_18px_#f87171]",
+                                 !isTarget && !isAlwaysRed && "opacity-95",
+                               ].filter(Boolean).join(' ')}
+                               style={{ height: WHITE_H }}
+                          >
+                            {isPlaced && (
+                              <button type="button" onClick={()=>removePlacement(key.id)}
+                                      className="mt-3 px-3 py-1 rounded-full bg-green-600 text-white text-lg font-bold shadow focus:outline-none focus:ring-2 focus:ring-green-400"
+                                      aria-label={`Remove ${placements[key.id]} from this key`} title="Click to delete">
+                                {placements[key.id]} ×
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Black keys layer */}
+                  <div className="absolute top-0 left-0 right-0 pointer-events-none">
+                    {whiteKeys.map((key,i)=>{
+                      const letter = key.id[0]; const oct = key.id.slice(1);
+                      const b = BLACK_AFTER[letter] ? `${BLACK_AFTER[letter]}${oct}` : null;
+                      const show = !!b && allKeys.some(k=>k.id===b); if(!show) return null;
+                      const left = i * (WHITE_W + GAP) + WHITE_W - BLACK_W/2;
+                      return (
+                        <div key={`black-${b}`} className="absolute bg-black rounded-b-md shadow-2xl" style={{ width: BLACK_W+"px", height: BLACK_H+"px", left: left+"px", top: 0 }} />
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Celebration Banner */}
+            {celebrate && (
+              <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" role="dialog" aria-labelledby="win-title">
+                <div className="relative bg-yellow-100 border-2 border-yellow-300 rounded-3xl shadow-2xl p-8 max-w-lg text-center">
+                  <h3 id="win-title" className="text-2xl font-extrabold mb-2 text-yellow-900">Hooray! ✨</h3>
+                  <span className="sparkle absolute -top-2 left-6 text-3xl">✨</span>
+                  <span className="sparkle absolute -top-4 right-10 text-2xl" style={{ animationDelay: '.15s' }}>✨</span>
+                  <span className="sparkle absolute -bottom-3 left-10 text-2xl" style={{ animationDelay: '.3s' }}>✨</span>
+                  <p className="text-lg">You have matched all of the notes to their keys correctly!</p>
+
+                  <div className="mt-4 flex items-center justify-center gap-3">
+                    <label htmlFor="studentName" className="text-sm font-medium">Student name:</label>
+                    <input id="studentName" value={studentName} onChange={e=>setStudentName(e.target.value)} placeholder="Type your full name" className="px-3 py-2 border rounded-lg w-[320px]" />
+                  </div>
+
+                  <div className="mt-6">
+                    <Certificate name={studentName || 'Student'} />
+                  </div>
+
+                  <div className="mt-4 flex gap-3 justify-center">
+                    <button onClick={()=>setCelebrate(false)} className="px-5 py-2 bg-white border rounded-xl">Keep Practicing</button>
+                    <ExportCertificateButton />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <p className="mt-6 text-sm text-slate-600">
+              Tip: Letters are case-sensitive and represent natural notes only. Drop them on the matching <span className="font-semibold">white</span> keys from <span className="font-semibold">E4</span> through <span className="font-semibold">F5</span>.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
