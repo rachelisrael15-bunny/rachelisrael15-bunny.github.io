@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Build the Measure</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f3e9ff; /* light purple */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .wrapper {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+      padding: 24px 32px 32px;
+      max-width: 900px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    h1 {
+      margin-top: 0;
+      text-align: center;
+      font-size: 2rem;
+    }
+    .instructions {
+      text-align: center;
+      margin-bottom: 18px;
+      font-size: 1rem;
+    }
+    .measure-container {
+      margin: 20px auto 10px;
+      max-width: 700px;
+    }
+    /* Measure area */
+    #measure {
+      position: relative;
+      height: 150px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-around;
+      align-items: flex-end;
+      box-sizing: border-box;
+      background-color: #fafafa;
+      transition: box-shadow 0.2s;
+      padding-bottom: 0;
+    }
+    /* Measure line */
+    #measure::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      border-top: 4px solid #333;
+    }
+    #measure.success {
+      box-shadow: 0 0 12px rgba(0, 180, 80, 0.9);
+    }
+    /* Drop slots */
+    .slot {
+      width: 100px;
+      height: 130px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      border: 2px dashed #c5c5c5;
+      border-radius: 10px;
+      background-color: rgba(255,255,255,0.7);
+      box-sizing: border-box;
+    }
+    .slot.highlight {
+      border-color: #7c5cff;
+      background-color: #efe8ff;
+    }
+    .note-bank {
+      margin-top: 24px;
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+    .note-template, .placed-note {
+      width: 80px;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
+    }
+    .note-template {
+      cursor: grab;
+      padding: 4px;
+      border-radius: 8px;
+    }
+    .note-template:active {
+      cursor: grabbing;
+    }
+    .note-icon svg, .placed-note svg {
+      width: 70px;
+      height: 120px;
+      display: block;
+    }
+    .placed-note {
+      margin-bottom: -4px; /* sit on the line */
+    }
+    .note-label {
+      text-align: center;
+      font-size: 0.8rem;
+      margin-top: 4px;
+    }
+    .controls {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      background-color: #7c5cff;
+      color: white;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #6243d0;
+    }
+    .status {
+      font-size: 0.95rem;
+      min-height: 1.2em;
+      text-align: center;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <h1>Build the Measure</h1>
+    <p class="instructions">
+      Drag the rhythm or rhythms to the measure to add up to <strong>4 beats.</strong>
+    </p>
+
+    <div class="measure-container">
+      <div id="measure">
+        <div class="slot" data-slot></div>
+        <div class="slot" data-slot></div>
+        <div class="slot" data-slot></div>
+        <div class="slot" data-slot></div>
+      </div>
+    </div>
+
+    <div class="note-bank">
+      <!-- WHOLE NOTE – 4 BEATS -->
+      <div class="note-template" draggable="true" data-value="4">
+        <div class="note-icon">
+          <svg viewBox="0 0 80 120" aria-hidden="true">
+            <ellipse cx="40" cy="100" rx="20" ry="12"
+                     fill="white" stroke="black" stroke-width="3" />
+          </svg>
+        </div>
+        <div class="note-label">Whole Note (4 beats)</div>
+      </div>
+
+      <!-- HALF NOTE – 2 BEATS -->
+      <div class="note-template" draggable="true" data-value="2">
+        <div class="note-icon">
+          <svg viewBox="0 0 80 120" aria-hidden="true">
+            <ellipse cx="38" cy="100" rx="18" ry="11"
+                     fill="white" stroke="black" stroke-width="3"
+                     transform="rotate(-20 38 100)" />
+            <line x1="48" y1="90" x2="48" y2="20"
+                  stroke="black" stroke-width="3" />
+          </svg>
+        </div>
+        <div class="note-label">Half Note (2 beats)</div>
+      </div>
+
+      <!-- QUARTER NOTE – 1 BEAT -->
+      <div class="note-template" draggable="true" data-value="1">
+        <div class="note-icon">
+          <svg viewBox="0 0 80 120" aria-hidden="true">
+            <ellipse cx="38" cy="100" rx="18" ry="11"
+                     fill="black" stroke="black" stroke-width="3"
+                     transform="rotate(-20 38 100)" />
+            <line x1="48" y1="90" x2="48" y2="20"
+                  stroke="black" stroke-width="3" />
+          </svg>
+        </div>
+        <div class="note-label">Quarter Note (1 beat)</div>
+      </div>
+
+      <!-- QUARTER REST – 1 BEAT -->
+      <div class="note-template" draggable="true" data-value="1">
+        <div class="note-icon">
+          <svg viewBox="0 0 80 120" aria-hidden="true">
+            <path d="M40 20
+                     C45 30, 45 40, 36 50
+                     C30 56, 30 63, 38 70
+                     C44 76, 44 83, 34 95"
+                  stroke="black"
+                  stroke-width="4"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round" />
+          </svg>
+        </div>
+        <div class="note-label">Quarter Rest (1 beat)</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="resetBtn">Reset Measure</button>
+    </div>
+
+    <p class="status" id="statusText"></p>
+
+    <!-- Put chime.mp3 next to this file for sound -->
+    <audio id="chimeAudio">
+      <source src="chime.mp3" type="audio/mpeg">
+    </audio>
+  </div>
+
+  <script>
+    const measure = document.getElementById('measure');
+    const slots = document.querySelectorAll('[data-slot]');
+    const templates = document.querySelectorAll('.note-template');
+    const resetBtn = document.getElementById('resetBtn');
+    const statusText = document.getElementById('statusText');
+    const chimeAudio = document.getElementById('chimeAudio');
+
+    let currentBeats = 0;
+
+    function updateStatus() {
+      if (currentBeats === 4) {
+        statusText.textContent = "Nice work! You built a 4-beat measure.";
+        measure.classList.add('success');
+        chimeAudio.currentTime = 0;
+        chimeAudio.play().catch(() => {});
+      } else if (currentBeats > 4) {
+        statusText.textContent = "That's more than 4 beats. Try again or reset.";
+        measure.classList.remove('success');
+      } else {
+        statusText.textContent =
+          `Current total: ${currentBeats} beat${currentBeats === 1 ? "" : "s"}.`;
+        measure.classList.remove('success');
+      }
+    }
+
+    function resetMeasure() {
+      slots.forEach(slot => {
+        slot.innerHTML = "";
+      });
+      currentBeats = 0;
+      updateStatus();
+    }
+
+    // DRAG FROM NOTE BANK
+    templates.forEach(t => {
+      t.addEventListener('dragstart', e => {
+        const icon = t.querySelector('.note-icon');
+        e.dataTransfer.effectAllowed = 'copy';
+        e.dataTransfer.setData('text/plain', JSON.stringify({
+          value: parseInt(t.dataset.value, 10),
+          html: icon.innerHTML
+        }));
+      });
+    });
+
+    // DROP ON SLOTS
+    slots.forEach(slot => {
+      slot.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        slot.classList.add('highlight');
+      });
+
+      slot.addEventListener('dragleave', () => {
+        slot.classList.remove('highlight');
+      });
+
+      slot.addEventListener('drop', e => {
+        e.preventDefault();
+        slot.classList.remove('highlight');
+
+        const raw = e.dataTransfer.getData('text/plain');
+        if (!raw) return;
+        const data = JSON.parse(raw);
+
+        // remove existing note if present
+        const existing = slot.querySelector('.placed-note');
+        if (existing) {
+          currentBeats -= parseInt(existing.dataset.value, 10);
+          existing.remove();
+        }
+
+        const noteEl = document.createElement('div');
+        noteEl.classList.add('placed-note');
+        noteEl.dataset.value = data.value;
+        noteEl.innerHTML = data.html;
+
+        slot.appendChild(noteEl);
+
+        currentBeats += data.value;
+        updateStatus();
+      });
+    });
+
+    resetBtn.addEventListener('click', resetMeasure);
+
+    // Initialize
+    resetMeasure();
+  </script>
+</body>
+</html>
