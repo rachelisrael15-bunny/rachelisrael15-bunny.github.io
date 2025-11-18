@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Treble Note Invaders</title>
+  <style>
+    body {
+      margin: 0;
+      background: black;
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #gameContainer {
+      position: relative;
+    }
+
+    canvas {
+      border: 2px solid #555;
+      background: black;
+      display: block;
+    }
+
+    /* Scoreboard on the side */
+    #hud {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+    }
+
+    #scorePanel {
+      background: rgba(0, 0, 0, 0.8);
+      border: 2px solid #888;
+      border-radius: 10px;
+      padding: 10px 14px;
+      min-width: 170px;
+      box-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+    }
+
+    .scoreTitle {
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #666;
+      padding-bottom: 4px;
+    }
+
+    .scoreRow {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      margin: 2px 0;
+    }
+
+    /* Directions overlay */
+    #overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.7);
+    }
+
+    #overlayContent {
+      background: #1f2937;
+      border-radius: 14px;
+      padding: 20px 28px;
+      max-width: 560px;
+      text-align: center;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
+      border: 1px solid #4b5563;
+    }
+
+    #overlayContent h1 {
+      margin-bottom: 10px;
+      font-size: 30px;
+    }
+
+    #overlayContent p {
+      font-size: 15px;
+      line-height: 1.4;
+      margin: 4px 0;
+    }
+
+    #overlayContent ul {
+      text-align: left;
+      margin: 10px 0 0;
+      padding-left: 18px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    #overlayContent button {
+      margin-top: 15px;
+      padding: 10px 22px;
+      font-size: 18px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+    }
+
+    #roundInfoText {
+      margin-top: 12px;
+      font-size: 15px;
+    }
+
+    #bestScoreText {
+      margin-top: 6px;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    #badgeText {
+      margin-top: 10px;
+      font-size: 16px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="gameCanvas" width="900" height="500"></canvas>
+
+    <!-- Scoreboard -->
+    <div id="hud">
+      <div id="scorePanel">
+        <div class="scoreTitle">Scoreboard</div>
+        <div class="scoreRow"><span>Round:</span><span id="roundDisplay">1 / 3</span></div>
+        <div class="scoreRow"><span>Score:</span><span id="scoreDisplay">0</span></div>
+        <div class="scoreRow"><span>Mistakes (lives):</span><span id="livesDisplay">3</span></div>
+        <div class="scoreRow"><span>Time:</span><span id="timeDisplay">60</span></div>
+        <div class="scoreRow"><span>Highest:</span><span id="bestScoreDisplay">0</span></div>
+      </div>
+    </div>
+
+    <!-- Directions / Results overlay -->
+    <div id="overlay">
+      <div id="overlayContent">
+        <h1>Treble Note Invaders</h1>
+        <p><strong>Goal:</strong> Read the note on the treble staff on the right, then send a quarter note from your mini piano keyboard to meet the falling letter that matches that note name.</p>
+        <p><strong>How to play:</strong></p>
+        <ul>
+          <li>Look at the target note on the treble staff.</li>
+          <li>Move your mini piano with ← and →.</li>
+          <li>Press Space to send a quarter note upward.</li>
+          <li>Hit the correct matching letter to score points.</li>
+        </ul>
+        <p>You will play <strong>3 rounds</strong> of <strong>60 seconds each</strong>. Try to get your highest score!</p>
+        <button id="startButton" onclick="startGame()">Play</button>
+        <p id="roundInfoText"></p>
+        <p id="bestScoreText"></p>
+        <p id="badgeText"></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const livesDisplay = document.getElementById('livesDisplay');
+    const bestScoreDisplay = document.getElementById('bestScoreDisplay');
+    const roundDisplay = document.getElementById('roundDisplay');
+    const overlay = document.getElementById('overlay');
+    const startButton = document.getElementById('startButton');
+    const roundInfoText = document.getElementById('roundInfoText');
+    const bestScoreText = document.getElementById('bestScoreText');
+    const badgeText = document.getElementById('badgeText');
+
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+
+    let stars = [];
+    let player;
+    let noteShot;
+    let letters = [];
+    let keys = {};
+    let score = 0;
+    let bestScore = 0;
+    let lives = 3;
+    let timeRemaining = 60;
+    let lastTime = 0;
+    let gameRunning = false;
+
+    const TOTAL_ROUNDS = 3;
+    let currentRound = 1;
+    let roundScores = [0, 0, 0];
+    let inIntro = true;
+
+    let spawnTimer = 0;
+    const SPAWN_INTERVAL = 1.5;
+
+    let targetNote = null;
+
+    const staffLeft = WIDTH - 180;
+    const staffRight = WIDTH - 20;
+    const staffTop = 120;
+    const staffSpacing = 12;
+
+    const trebleNotePositions = [
+      { name: 'E', offset: 4.0 },
+      { name: 'F', offset: 3.5 },
+      { name: 'G', offset: 3.0 },
+      { name: 'A', offset: 2.5 },
+      { name: 'B', offset: 2.0 },
+      { name: 'C', offset: 1.5 },
+      { name: 'D', offset: 1.0 },
+      { name: 'E', offset: 0.5 },
+      { name: 'F', offset: 0.0 }
+    ];
+
+    function initStars() {
+      stars = [];
+      for (let i = 0; i < 120; i++) {
+        stars.push({
+          x: Math.random() * WIDTH,
+          y: Math.random() * HEIGHT,
+          size: Math.random() * 2 + 1
+        });
+      }
+    }
+
+    function initPlayer() {
+      const width = 90;
+      const height = 35;
+      player = {
+        x: WIDTH / 2 - width / 2,
+        y: HEIGHT - height - 20,
+        width,
+        height,
+        speed: 280
+      };
+    }
+
+    function initNoteShot() {
+      noteShot = {
+        x: 0,
+        y: 0,
+        speed: 400,
+        active: false
+      };
+    }
+
+    // Spawn letters with a higher chance of correct letters (60%)
+    function spawnLetter() {
+      const letterOptions = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+
+      let char;
+      if (targetNote && Math.random() < 0.6) {
+        char = targetNote.name;
+      } else {
+        const notTarget = letterOptions.filter(l => !targetNote || l !== targetNote.name);
+        char = notTarget[Math.floor(Math.random() * notTarget.length)];
+      }
+
+      const letterWidth = 28;
+      const margin = 40;
+      const xMin = 20 + margin;
+      const xMax = (WIDTH - 220) - margin - letterWidth;
+
+      const x = xMin + Math.random() * (xMax - xMin);
+      const y = -30;
+      const speed = 80 + Math.random() * 40;
+
+      letters.push({ x, y, char, speed, width: letterWidth, height: 28 });
+    }
+
+    function updateHUD() {
+      scoreDisplay.textContent = score;
+      livesDisplay.textContent = lives;
+      timeDisplay.textContent = Math.max(0, Math.ceil(timeRemaining));
+      roundDisplay.textContent = currentRound + " / " + TOTAL_ROUNDS;
+      bestScoreDisplay.textContent = bestScore;
+    }
+
+    function setNewTargetNote() {
+      const index = Math.floor(Math.random() * trebleNotePositions.length);
+      targetNote = trebleNotePositions[index];
+    }
+
+    // Input
+    window.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        sendNoteUpward();
+      }
+    });
+
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    function sendNoteUpward() {
+      if (!noteShot.active && gameRunning) {
+        noteShot.active = true;
+        noteShot.x = player.x + player.width / 2;
+        noteShot.y = player.y;
+      }
+    }
+
+    // Game loop
+    function gameLoop(timestamp) {
+      if (!lastTime) lastTime = timestamp;
+      const dt = (timestamp - lastTime) / 1000;
+      lastTime = timestamp;
+
+      if (gameRunning) update(dt);
+      draw();
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    function update(dt) {
+      timeRemaining -= dt;
+      if (timeRemaining <= 0) {
+        timeRemaining = 0;
+        endRound();
+        return;
+      }
+
+      if (keys['ArrowLeft']) player.x -= player.speed * dt;
+      if (keys['ArrowRight']) player.x += player.speed * dt;
+
+      player.x = Math.max(20, Math.min(player.x, WIDTH - 220 - player.width));
+
+      if (noteShot.active) {
+        noteShot.y -= noteShot.speed * dt;
+        if (noteShot.y < -20) noteShot.active = false;
+      }
+
+      spawnTimer += dt;
+      if (spawnTimer >= SPAWN_INTERVAL) {
+        spawnLetter();
+        spawnTimer = 0;
+      }
+
+      for (let i = letters.length - 1; i >= 0; i--) {
+        const L = letters[i];
+        L.y += L.speed * dt;
+
+        if (L.y > HEIGHT + 30) {
+          if (targetNote && L.char === targetNote.name) {
+            loseLife();
+          }
+          letters.splice(i, 1);
+          continue;
+        }
+
+        if (noteShot.active && rectCircleCollision(L, noteShot)) {
+          if (targetNote && L.char === targetNote.name) {
+            score += 10;
+            setNewTargetNote();
+          } else {
+            loseLife();
+          }
+          noteShot.active = false;
+          letters.splice(i, 1);
+        }
+      }
+
+      updateHUD();
+    }
+
+    function loseLife() {
+      lives--;
+      if (lives < 0) lives = 0;
+    }
+
+    function endRound() {
+      gameRunning = false;
+      roundScores[currentRound - 1] = score;
+      bestScore = Math.max(...roundScores);
+      updateHUD();
+      showOverlay(true, true);
+    }
+
+    function rectCircleCollision(letter, shot) {
+      const radius = 8;
+      const distX = Math.abs(shot.x - (letter.x + letter.width / 2));
+      const distY = Math.abs(shot.y - (letter.y + letter.height / 2));
+
+      if (distX > (letter.width / 2 + radius)) return false;
+      if (distY > (letter.height / 2 + radius)) return false;
+
+      if (distX <= (letter.width / 2)) return true;
+      if (distY <= (letter.height / 2)) return true;
+
+      const dx = distX - letter.width / 2;
+      const dy = distY - letter.height / 2;
+      return dx * dx + dy * dy <= radius * radius;
+    }
+
+    // Drawing
+    function draw() {
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      ctx.fillStyle = 'white';
+      stars.forEach(s => ctx.fillRect(s.x, s.y, s.size, s.size));
+
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(WIDTH - 200, 0);
+      ctx.lineTo(WIDTH - 200, HEIGHT);
+      ctx.stroke();
+
+      letters.forEach(L => {
+        ctx.font = 'bold 24px Arial';
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(L.char, L.x + L.width / 2, L.y + L.height / 2);
+      });
+
+      drawMiniKeyboard(player.x, player.y, player.width, player.height);
+
+      if (noteShot.active) drawQuarterNote(noteShot.x, noteShot.y);
+
+      drawStaffAndTargetNote();
+    }
+
+    function drawMiniKeyboard(x, y, width, height) {
+      ctx.save();
+      ctx.translate(x, y);
+
+      const numWhite = 7;
+      const whiteW = width / numWhite;
+      const whiteH = height;
+
+      ctx.fillStyle = 'white';
+      ctx.strokeStyle = 'black';
+      for (let i = 0; i < numWhite; i++) {
+        ctx.fillRect(i * whiteW, 0, whiteW, whiteH);
+        ctx.strokeRect(i * whiteW, 0, whiteW, whiteH);
+      }
+
+      const blackIdx = [0, 1, 3, 4, 5];
+      const blackW = whiteW * 0.6;
+      const blackH = whiteH * 0.6;
+      ctx.fillStyle = 'black';
+      blackIdx.forEach(i => {
+        ctx.fillRect((i + 1) * whiteW - blackW / 2, 0, blackW, blackH);
+      });
+
+      ctx.restore();
+    }
+
+    function drawStaffAndTargetNote() {
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 5; i++) {
+        const y = staffTop + i * staffSpacing;
+        ctx.beginPath();
+        ctx.moveTo(staffLeft, y);
+        ctx.lineTo(staffRight, y);
+        ctx.stroke();
+      }
+
+      ctx.font = '16px Arial';
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText('Target Note', (staffLeft + staffRight) / 2, staffTop - 30);
+
+      const clefX = staffLeft + 40;
+      const clefY = staffTop + staffSpacing * 2;
+      ctx.font = '90px "Times New Roman", serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('𝄞', clefX, clefY);
+
+      if (targetNote) {
+        const x = (staffLeft + staffRight) / 2;
+        const y = staffTop + targetNote.offset * staffSpacing;
+
+        ctx.beginPath();
+        ctx.ellipse(x, y, 8, 6, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(x + 8, y);
+        ctx.lineTo(x + 8, y - 30);
+        ctx.stroke();
+      }
+    }
+
+    function drawQuarterNote(x, y) {
+      ctx.beginPath();
+      ctx.ellipse(x, y, 8, 6, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'white';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(x + 8, y);
+      ctx.lineTo(x + 8, y - 25);
+      ctx.strokeStyle = 'white';
+      ctx.stroke();
+    }
+
+    // Badge logic
+    function getBadgeForScore(score) {
+      if (score >= 120) {
+        return {
+          level: 'Gold',
+          name: 'Maestro of the Staff',
+          emoji: '🥇'
+        };
+      } else if (score >= 50) {
+        return {
+          level: 'Silver',
+          name: 'Note Ninja',
+          emoji: '🥈'
+        };
+      } else {
+        return {
+          level: 'Bronze',
+          name: 'Treble Trainee',
+          emoji: '🥉'
+        };
+      }
+    }
+
+    // Overlay
+    function showOverlay(show, fromRoundEnd) {
+      if (!show) {
+        overlay.style.display = 'none';
+        return;
+      }
+
+      overlay.style.display = 'flex';
+
+      if (!fromRoundEnd) {
+        startButton.textContent = 'Play';
+        roundInfoText.textContent = 'You will see your score after each round.';
+        bestScoreText.textContent = '';
+        badgeText.textContent = '';
+      } else {
+        const thisScore = roundScores[currentRound - 1];
+
+        if (currentRound < TOTAL_ROUNDS) {
+          startButton.textContent = 'Start Round ' + (currentRound + 1);
+          roundInfoText.textContent = `Round ${currentRound} complete! Score: ${thisScore} points.`;
+          bestScoreText.textContent = `Highest score so far: ${bestScore} points.`;
+          badgeText.textContent = '';
+        } else {
+          // After Round 3 – show badge
+          startButton.textContent = 'Play Again';
+          roundInfoText.textContent = 'All 3 rounds are complete!';
+          const scoresText =
+            `Round 1: ${roundScores[0]} | Round 2: ${roundScores[1]} | Round 3: ${roundScores[2]}`;
+          bestScoreText.textContent = scoresText + ` | Highest: ${bestScore} points.`;
+
+          const badge = getBadgeForScore(bestScore);
+          badgeText.textContent = `${badge.emoji} You earned the ${badge.level} badge: “${badge.name}”!`;
+        }
+      }
+    }
+
+    function startGame() {
+      if (inIntro) {
+        inIntro = false;
+        currentRound = 1;
+        roundScores = [0, 0, 0];
+        bestScore = 0;
+      } else {
+        if (currentRound < TOTAL_ROUNDS) {
+          currentRound++;
+        } else {
+          currentRound = 1;
+          roundScores = [0, 0, 0];
+          bestScore = 0;
+        }
+      }
+
+      score = 0;
+      lives = 3;
+      timeRemaining = 60;
+      letters = [];
+      spawnTimer = 0;
+      initPlayer();
+      initNoteShot();
+      setNewTargetNote();
+      updateHUD();
+
+      overlay.style.display = 'none';
+      gameRunning = true;
+      lastTime = performance.now();
+    }
+
+    function init() {
+      initStars();
+      initPlayer();
+      initNoteShot();
+      setNewTargetNote();
+      updateHUD();
+      showOverlay(true, false);
+      requestAnimationFrame(gameLoop);
+    }
+
+    init();
+  </script>
+</body>
+</html>
